@@ -9,13 +9,31 @@ from langchain.callbacks.manager import CallbackManager
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 import chainlit as cl
 from langchain.chains import RetrievalQA
+from langchain import PromptTemplate
 
 ABS_PATH: str = os.path.dirname(os.path.abspath(__file__))
 DB_DIR: str = os.path.join(ABS_PATH, "dburl")
 
 
 # Set up RetrievelQA model
-rag_prompt_mistral = hub.pull("rlm/rag-prompt-mistral")
+# rag_prompt_mistral = hub.pull("rlm/rag-prompt-mistral")
+
+template = '''
+<s> [INST] You are an assistant for question-answering tasks. USE ONLY THE PROVIDED CONTEXT to answer the question. DO NOT USE ANY OTHER knowledge or information. Use three sentences maximum and provide concise answers. Explain where in the context you found numbers and dates. [/INST] </s>
+
+[INST] Question: {question}
+
+Context: {context}
+
+Answer: [/INST]
+'''
+rag_prompt_mistral = PromptTemplate(
+    template=template, 
+    input_variables=[
+        'context', 
+        'question',
+    ]
+)
 
 
 def load_model():
@@ -27,10 +45,10 @@ def load_model():
     return llm
 
 
-def retrieval_qa_chain(llm, vectorstore): ## combines the llm with the qa
+def retrieval_qa_chain(llm, vectorstore):
     qa_chain = RetrievalQA.from_chain_type(
         llm,
-        retriever=vectorstore.as_retriever(search_kwargs={"k": 1}), ##converting vectorstrore db to retriever obj ## relevant info within db
+        retriever=vectorstore.as_retriever(search_kwargs={"k": 20}),
         chain_type_kwargs={"prompt": rag_prompt_mistral},
         return_source_documents=True,
     )
@@ -48,7 +66,7 @@ def qa_bot():
     return qa
 
 
-@cl.on_chat_start ## event handler - triggers when chat session starts
+@cl.on_chat_start
 async def start():
     """
     Initializes the bot when a new chat starts.
@@ -60,7 +78,7 @@ async def start():
     welcome_message = cl.Message(content="Starting the bot...")
     await welcome_message.send()
     welcome_message.content = (
-        "Hi, Welcome to Chat With Documents using Ollama (zephyr model) and LangChain."
+        "Hi, Welcome to Chat With Documents using Ollama (mistral model) and LangChain."
     )
     await welcome_message.update()
     cl.user_session.set("chain", chain)
@@ -81,11 +99,10 @@ async def main(message):
     cb.answer_reached = True
     # res=await chain.acall(message, callbacks=[cb])
     res = await chain.acall(message.content, callbacks=[cb])
-    print(f"response: {res}")
+    #print(f"response: {res}")
     answer = res["result"]
     #answer = answer.replace(".", ".\n")
     source_documents = res["source_documents"]
-    # print("Source documents length : ", len(source_documents))
 
     text_elements = []  # type: List[cl.Text]
 

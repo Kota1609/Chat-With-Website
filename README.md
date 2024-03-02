@@ -38,7 +38,13 @@ cd chat-with-website
    pip install -r requirements.txt
    ```
 
-5. For chainlit, use the following command in your terminal.
+5. Run the following command in your terminal to start the chat UI:
+   ```
+   streamlit run chat_with_website_openai.py
+   streamlit run chat_with_website_ollama.py
+   ```
+
+6. For chainlit, use the following command in your terminal.
 ```
 python3 ingest.py #for ingesting
 chainlit run main.py #for chainlit ui

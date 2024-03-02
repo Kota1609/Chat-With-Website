@@ -1,0 +1,1 @@
+accepts scores that are sent to us electronically
