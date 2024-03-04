@@ -10,16 +10,17 @@ from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 import chainlit as cl
 from langchain.chains import RetrievalQA
 from langchain import PromptTemplate
+from langchain.embeddings import HuggingFaceEmbeddings
 
 ABS_PATH: str = os.path.dirname(os.path.abspath(__file__))
-DB_DIR: str = os.path.join(ABS_PATH, "dburl")
-
+DB_DIR: str = os.path.join(ABS_PATH, "zephyr-dburl")
+persist_directory = os.environ.get("PERSIST_DIRECTORY", "dburl_zephyr_hf")
 
 # Set up RetrievelQA model
 # rag_prompt_mistral = hub.pull("rlm/rag-prompt-mistral")
 
 template = '''
-<s> [INST] You are an assistant for question-answering tasks. USE ONLY THE PROVIDED CONTEXT to answer the question. DO NOT USE ANY OTHER knowledge or information. Use three sentences maximum and provide concise answers. Explain where in the context you found numbers and dates. [/INST] </s>
+<s> [INST] Please answer in single line. You are an assistant for question-answering tasks. USE ONLY THE PROVIDED CONTEXT to answer the question. DO NOT USE ANY OTHER knowledge or information. Use three sentences maximum and provide concise answers. Explain where in the context you found numbers and dates. [/INST] </s>
 
 [INST] Question: {question}
 
@@ -38,7 +39,7 @@ rag_prompt_mistral = PromptTemplate(
 
 def load_model():
     llm = Ollama(
-        model="zephyr",
+        model="gemma",
         verbose=True,
         callback_manager=CallbackManager([StreamingStdOutCallbackHandler()]),
     )
@@ -48,9 +49,9 @@ def load_model():
 def retrieval_qa_chain(llm, vectorstore):
     qa_chain = RetrievalQA.from_chain_type(
         llm,
-        retriever=vectorstore.as_retriever(search_kwargs={"k": 20}),
+        retriever=vectorstore.as_retriever(search_kwargs={"k": 5}),
         chain_type_kwargs={"prompt": rag_prompt_mistral},
-        return_source_documents=True,
+        return_source_documents=True
     )
     return qa_chain
 
@@ -58,9 +59,9 @@ def retrieval_qa_chain(llm, vectorstore):
 def qa_bot():
     llm = load_model()
     DB_PATH = DB_DIR
+    embeddings = HuggingFaceEmbeddings(model_name='all-MiniLM-L6-v2')
     vectorstore = Chroma(
-        persist_directory=DB_PATH, embedding_function=OllamaEmbeddings(model="zephyr")
-    )
+        persist_directory=persist_directory, embedding_function=embeddings)
 
     qa = retrieval_qa_chain(llm, vectorstore)
     return qa
@@ -78,7 +79,7 @@ async def start():
     welcome_message = cl.Message(content="Starting the bot...")
     await welcome_message.send()
     welcome_message.content = (
-        "Hi, Welcome to Chat With Documents using Ollama (mistral model) and LangChain."
+        "Hi, Welcome to Chat With Documents using Ollama (gemma model) and LangChain."
     )
     await welcome_message.update()
     cl.user_session.set("chain", chain)
@@ -99,7 +100,7 @@ async def main(message):
     cb.answer_reached = True
     # res=await chain.acall(message, callbacks=[cb])
     res = await chain.acall(message.content, callbacks=[cb])
-    #print(f"response: {res}")
+    # print(f"response: {res}")
     answer = res["result"]
     #answer = answer.replace(".", ".\n")
     source_documents = res["source_documents"]

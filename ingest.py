@@ -4,7 +4,6 @@ import glob
 from typing import List
 from multiprocessing import Pool
 from tqdm import tqdm
-from chromadb.config import Settings
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import (
@@ -23,17 +22,18 @@ from langchain_community.embeddings import OllamaEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
+from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.docstore.document import Document
 
 warnings.simplefilter("ignore")
 
 ABS_PATH: str = os.path.dirname(os.path.abspath(__file__))
-DB_DIR: str = os.path.join(ABS_PATH, "dburl")
+DB_DIR: str = os.path.join(ABS_PATH, "dburl_zephyr_hf")
 
-source_directory = os.environ.get('SOURCE_DIRECTORY', 'single_doc')
+source_directory = os.environ.get('SOURCE_DIRECTORY', 'source_documents')
 embeddings_model_name = os.environ.get('EMBEDDINGS_MODEL_NAME', 'all-MiniLM-L6-v2')
-chunk_size = 50
-chunk_overlap = 0
+chunk_size = 500
+chunk_overlap = 50
 
 LOADER_MAPPING = {
     ".csv": (CSVLoader, {}),
@@ -97,10 +97,11 @@ def process_documents(ignored_files: List[str] = []) -> List[Document]:
 # Create vector database
 def create_vector_database():
 
-    ollama_embeddings = OllamaEmbeddings(model="zephyr")
+    # ollama_embeddings = OllamaEmbeddings(model="sfr-salesforce")
+    embeddings = HuggingFaceEmbeddings(model_name=embeddings_model_name)
     vector_database = Chroma(
         # documents=chunked_documents,
-        embedding_function=ollama_embeddings,
+        embedding_function=embeddings,
         persist_directory=DB_DIR
     )
 
