@@ -4,7 +4,14 @@ import glob
 from typing import List
 from multiprocessing import Pool
 from tqdm import tqdm
-
+import pandas as pd
+from langchain.callbacks.manager import CallbackManager
+from langchain_community.llms import Ollama
+from langchain.prompts import PromptTemplate
+from langchain.docstore.document import Document
+from langchain.callbacks.manager import CallbackManager
+from langchain_community.llms import Ollama
+from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import (
     CSVLoader,
@@ -18,7 +25,6 @@ from langchain_community.document_loaders import (
     UnstructuredPowerPointLoader,
     UnstructuredWordDocumentLoader,
 )
-from langchain_community.embeddings import OllamaEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
@@ -28,12 +34,12 @@ from langchain.docstore.document import Document
 warnings.simplefilter("ignore")
 
 ABS_PATH: str = os.path.dirname(os.path.abspath(__file__))
-DB_DIR: str = os.path.join(ABS_PATH, "dburl_zephyr_hf")
+DB_DIR: str = os.path.join(ABS_PATH, "dburl")
 
 source_directory = os.environ.get('SOURCE_DIRECTORY', 'source_documents')
-embeddings_model_name = os.environ.get('EMBEDDINGS_MODEL_NAME', 'all-MiniLM-L6-v2')
-chunk_size = 500
-chunk_overlap = 50
+
+chunk_size = 1500
+chunk_overlap = 128
 
 LOADER_MAPPING = {
     ".csv": (CSVLoader, {}),
@@ -88,27 +94,102 @@ def process_documents(ignored_files: List[str] = []) -> List[Document]:
     if not documents:
         print("No new documents to load")
         exit(0)
+
+    for d in documents:
+        lines = d.page_content.split('\n')  # Split the content into lines
+        processed_lines = []
+        for line in lines:
+            processed_line = " ".join(line.split())
+            processed_lines.append(processed_line)
+        d.page_content = "\n".join(processed_lines)  # Join the processed lines back together with newlines
+
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
     texts = text_splitter.split_documents(documents)
-    print("Texttextstextsextsts :",texts)
-    print('\n')
     return texts
+
+# Setup the LLM model
+llm = Ollama(
+    model="gemma",
+    verbose=True,
+    callback_manager=CallbackManager([StreamingStdOutCallbackHandler()]),
+)
+
+prompt_template = PromptTemplate.from_template(
+    "Preparing a supervised dataset from the question and answers. Generate 5 detailed and diverse questions from the following text. Each question should explore a different aspect or detail of the text. Provide comprehensive answers that include specific references to the text. Format the response as follows: Separate the 'Questions' labeled as 'questions' and 'Answers' labeled as 'answers' in list format with labeled numbering separately. Text: {paragraph}"
+)
+
+def dataset_document(document):
+    response = (prompt_template | llm).invoke({"paragraph": document.page_content})
+    questions = []
+    answers = []
+    collecting_questions = False
+    collecting_answers = False
+
+    for line in response.split('\n'):
+        line = line.strip()  # Clean up whitespace
+
+        if line.startswith('**Questions:**'):
+            collecting_questions = True
+            collecting_answers = False
+            continue
+        elif line.startswith('**Answers:**'):
+            collecting_answers = True
+            collecting_questions = False
+            continue
+        
+        if collecting_questions and line:
+            if line[0].isdigit():  # Check if line starts with a digit, indicating a question number
+                question = line.split('.', 1)[1].strip()
+                questions.append(question)
+        elif collecting_answers and line:
+            if line[0].isdigit():  # Check if line starts with a digit, indicating an answer number
+                answer = line.split('.', 1)[1].strip()
+                answers.append(answer)
+
+    # Check for length mismatch and adjust if necessary
+    min_length = min(len(questions), len(answers))
+    questions = questions[:min_length]
+    answers = answers[:min_length]
+
+    return questions, answers
+
+def dataset_documents(documents):
+    all_questions = []
+    all_answers = []
+    for document in documents:
+        questions, answers = dataset_document(document)
+        all_questions.extend(questions)
+        all_answers.extend(answers)
+    
+    if len(all_questions) != len(all_answers):
+        raise ValueError("Mismatch in the number of questions and answers generated.")
+    return pd.DataFrame({
+        'Question': all_questions,
+        'Answer': all_answers
+    })
+
 
 # Create vector database
 def create_vector_database():
+    
+    embeddings = HuggingFaceEmbeddings(model_name="mixedbread-ai/mxbai-embed-large-v1")
 
-    # ollama_embeddings = OllamaEmbeddings(model="sfr-salesforce")
-    embeddings = HuggingFaceEmbeddings(model_name=embeddings_model_name)
     vector_database = Chroma(
-        # documents=chunked_documents,
         embedding_function=embeddings,
         persist_directory=DB_DIR
     )
 
-    # db = Chroma(persist_directory=persist_directory, embedding_function=embeddings, client_settings=CHROMA_SETTINGS)
     collection = vector_database.get()
     texts = process_documents([metadata['source'] for metadata in collection['metadatas']])
+    
+    df = dataset_documents(texts)
 
+    csv_file_path = 'output_questions_answers.csv'
+    df.to_csv(csv_file_path, index=False)
+
+    print("CSV file created successfully.")
+    
+    print("A :",texts[0])
     print(f"Creating embeddings. May take some minutes...")
     vector_database.add_documents(texts)
 

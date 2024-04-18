@@ -7,3 +7,4 @@ tiktoken
 unstructured
 chainlit
 libmagic
+sentence-transformers
