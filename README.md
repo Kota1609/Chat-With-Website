@@ -49,3 +49,7 @@ cd chat-with-website
 python3 ingest.py #for ingesting
 chainlit run main.py #for chainlit ui
 ```
+
+Conversational Question Answering model with chainlit, where we use documents related to University of North Texas and chat with them.
+<img width="1727" alt="Screenshot 2024-06-29 at 7 18 41 PM" src="https://github.com/Kota1609/Chat-With-Website/assets/73300674/02c98b1f-8362-4b10-b12b-21185a53fb3b">
+<img width="1727" alt="Screenshot 2024-06-29 at 7 18 45 PM" src="https://github.com/Kota1609/Chat-With-Website/assets/73300674/e8537217-ae2c-4ba7-8cf1-cfaa142628e1">
